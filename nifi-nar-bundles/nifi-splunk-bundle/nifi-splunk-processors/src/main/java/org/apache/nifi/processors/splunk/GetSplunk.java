@@ -386,6 +386,8 @@ public class GetSplunk extends AbstractProcessor {
         exportArgs.setSearchMode(JobExportArgs.SearchMode.NORMAL);
         exportArgs.setOutputMode(JobExportArgs.OutputMode.valueOf(outputMode));
 
+        exportArgs.setTimeout(10*60);
+
         String earliestTime = null;
         String latestTime = null;
 
