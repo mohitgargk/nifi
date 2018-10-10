@@ -46,8 +46,8 @@ language governing permissions and limitations under the License. -->
                             <tarLongFileMode>posix</tarLongFileMode>
                             <formats>
                                 <format>dir</format>
-                                <format>zip</format>
-                                <format>tar.gz</format>
+                                <!--<format>zip</format>-->
+                                <!--<format>tar.gz</format>-->
                             </formats>
                         </configuration>
                     </execution>
