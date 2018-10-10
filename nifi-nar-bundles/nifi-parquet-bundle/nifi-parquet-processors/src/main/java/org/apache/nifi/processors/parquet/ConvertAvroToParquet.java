@@ -239,7 +239,9 @@ public class ConvertAvroToParquet extends AbstractProcessor {
 
                     // Delete parquet file
                     File temp = new File(fileName);
+                    File tempCrc = new File("."+fileName+".crc");
                     temp.delete();
+                    tempCrc.delete();
                 }
             });
 
