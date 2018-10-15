@@ -7,14 +7,11 @@ import org.apache.avro.file.DataFileStream;
 import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
 import org.apache.nifi.annotation.behavior.WritesAttributes;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
-import org.apache.nifi.annotation.lifecycle.OnScheduled;
-import org.apache.nifi.avro.AvroTypeUtil;
 import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
@@ -23,10 +20,7 @@ import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.processor.*;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
-import org.apache.nifi.processors.hadoop.record.HDFSRecordWriter;
-import org.apache.nifi.processors.parquet.record.AvroParquetHDFSRecordWriter;
-import org.apache.nifi.schema.access.SchemaNotFoundException;
-import org.apache.nifi.serialization.record.RecordSchema;
+import org.apache.nifi.processors.parquet.stream.NifiParquetOutputFile;
 import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.avro.AvroReadSupport;
 import org.apache.parquet.column.ParquetProperties;
@@ -35,9 +29,11 @@ import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 
 import java.io.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 @Tags({"avro", "parquet", "convert"})
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
@@ -71,6 +67,7 @@ public class ConvertAvroToParquet extends AbstractProcessor {
             .displayName("Compression Type")
             .description("The type of compression for the file being written.")
             .allowableValues(COMPRESSION_TYPES.toArray(new AllowableValue[0]))
+            .defaultValue(COMPRESSION_TYPES.get(0).getValue())
             .required(true)
             .build();
 
@@ -144,17 +141,17 @@ public class ConvertAvroToParquet extends AbstractProcessor {
     private volatile List<PropertyDescriptor> parquetProps;
 
     // Relationships
-    private static final Relationship SUCCESS = new Relationship.Builder()
+    static final Relationship SUCCESS = new Relationship.Builder()
             .name("success")
             .description("Parquet file that was converted successfully from Avro")
             .build();
 
-    private static final Relationship FAILURE = new Relationship.Builder()
+    static final Relationship FAILURE = new Relationship.Builder()
             .name("failure")
             .description("Avro content that could not be processed")
             .build();
 
-    private static final Set<Relationship> RELATIONSHIPS
+    static final Set<Relationship> RELATIONSHIPS
             = ImmutableSet.<Relationship>builder()
             .add(SUCCESS)
             .add(FAILURE)
@@ -213,7 +210,7 @@ public class ConvertAvroToParquet extends AbstractProcessor {
 
                     Schema avroSchema = dataFileReader.getSchema();
                     System.out.println(avroSchema.toString(true));
-                    ParquetWriter<GenericRecord> writer = createParquetWriter(context, flowFile, new Path(fileName), avroSchema );
+                    ParquetWriter<GenericRecord> writer = createParquetWriter2(context, flowFile, rawOut, avroSchema );
 
                     try {
                         int recordCount = 0;
@@ -227,21 +224,6 @@ public class ConvertAvroToParquet extends AbstractProcessor {
                     } finally {
                         writer.close();
                     }
-
-                    // Pipe the byte stream from parquet file into out
-                    InputStream is = new FileInputStream(fileName);
-                    byte[] buffer = new byte[1024];
-                    int length;
-                    while ((length = is.read(buffer)) > 0) {
-                        out.write(buffer, 0, length);
-                    }
-                    is.close();
-
-                    // Delete parquet file
-                    File temp = new File(fileName);
-                    File tempCrc = new File("."+fileName+".crc");
-                    temp.delete();
-                    tempCrc.delete();
                 }
             });
 
@@ -267,14 +249,13 @@ public class ConvertAvroToParquet extends AbstractProcessor {
 
     }
 
-
-
-
-    private ParquetWriter createParquetWriter(final ProcessContext context, final FlowFile flowFile, final Path path, final Schema schema)
+    private ParquetWriter createParquetWriter2(final ProcessContext context, final FlowFile flowFile, final OutputStream out, final Schema schema)
             throws IOException {
 
+        NifiParquetOutputFile nifiParquetOutputFile = new NifiParquetOutputFile(out);
+
         final AvroParquetWriter.Builder<GenericRecord> parquetWriter = AvroParquetWriter
-                .<GenericRecord>builder(path)
+                .<GenericRecord>builder(nifiParquetOutputFile)
                 .withSchema(schema);
 
         Configuration conf = new Configuration();
